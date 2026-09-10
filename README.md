@@ -26,6 +26,7 @@ from {{ source('crm', 'contacts') }}
 | `format_state(expr[, zip_expr])` | Two-letter state code, with optional ZIP fallback |
 | `format_country(expr)` | ISO 3166-1 alpha-2 code, else null |
 | `standardize_gender(expr)` | `'Male'`, `'Female'`, `'Other'`, else null |
+| `format_name(expr)` | Proper-cased, trimmed name; Snowflake `initcap` default semantics on every adapter |
 | `validate_email(expr)` | Lowercased, trimmed address if well-formed, else null |
 | `hybrid_id(system, entity, id)` | Deterministic md5 surrogate key |
 | `to_utc_from_source_tz(expr)` | UTC-aligned timestamp from one carrying an offset |

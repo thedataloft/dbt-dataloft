@@ -19,6 +19,7 @@ Namespace every call: `{{ dbt_dataloft.<macro>(...) }}`.
 | `format_state(expr[, zip_expr])` | Two-letter state code. Falls back to ZIP ranges when `zip_expr` is given |
 | `format_country(expr)` | ISO 3166-1 alpha-2 code, else null |
 | `standardize_gender(expr)` | `'Male'`, `'Female'`, `'Other'`, else null |
+| `format_name(expr)` | Proper-cased name, trimmed — Snowflake `initcap` default semantics on every adapter (`o'brien` → `O'brien`, `mary-jane` → `Mary-Jane`) |
 
 ## The dispatch pattern
 
@@ -64,6 +65,16 @@ in the digits. Only apply it to a column you know is NANP.
 **Inherent — an all-digit string is a valid timestamp to Snowflake, not to DuckDB.**
 `'90210'` casts to 1970-01-02 on Snowflake (epoch seconds) and null on DuckDB. Both are
 defensible, so it is not normalised. Guard the input, or convert epochs explicitly.
+
+## Why `format_name` exists
+
+`dbt-coding-standards` mandates proper-cased names, and the obvious `initcap(trim(x))` does not
+exist on DuckDB — Catalog Error, found 2026-09-10 by the first DuckDB client's first staging
+model. `format_name` dispatches: `initcap(trim(x))` on Snowflake, a regex split-and-capitalise on
+DuckDB. The DuckDB side deliberately copies Snowflake's *default* word semantics — apostrophes are
+word characters, so `o'brien` → `O'brien` on both — because identical output is the contract; a
+prettier `O'Brien` on one adapter would be exactly the silent divergence this package exists to
+remove. Verified side by side on both adapters, 10 cases including empty, whitespace-only and null.
 
 ## Regex escaping
 
