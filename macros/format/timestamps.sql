@@ -37,11 +37,22 @@
         Usage:
             select {{ add_local_timezone('event_ts', "'America/Toronto'") }} as event_at_local
     #}
+    {{ return(adapter.dispatch('add_local_timezone', 'dbt_dataloft')(source_timestamp, local_timezone)) }}
+{% endmacro %}
+
+{% macro default__add_local_timezone(source_timestamp, local_timezone) %}
     {%- set ts = "((" ~ source_timestamp ~ ") :: timestamp)" -%}
     {{ dbt_dataloft.make_timestamp_tz(
         "year(" ~ ts ~ ")", "month(" ~ ts ~ ")", "day(" ~ ts ~ ")",
         "hour(" ~ ts ~ ")", "minute(" ~ ts ~ ")", "second(" ~ ts ~ ")",
         local_timezone) }}
+{% endmacro %}
+
+{% macro bigquery__add_local_timezone(source_timestamp, local_timezone) %}
+    {#-- No part decomposition needed: timestamp(datetime_expression, time_zone) attaches
+         a zone to a naive DATETIME directly. safe_cast keeps the package-wide promise
+         that unparseable input yields null rather than failing the build. --#}
+    timestamp(safe_cast({{ source_timestamp }} as datetime), {{ local_timezone }})
 {% endmacro %}
 
 
@@ -66,9 +77,20 @@
             local_timezone: quoted IANA name, e.g. "'America/Toronto'"
         Usage:
             select {{ date_to_local_timestamp('event_date', "'America/Toronto'") }} as event_at_local
+
     #}
+    {{ return(adapter.dispatch('date_to_local_timestamp', 'dbt_dataloft')(source_date, local_timezone)) }}
+{% endmacro %}
+
+{% macro default__date_to_local_timestamp(source_date, local_timezone) %}
     {%- set d = "((" ~ source_date ~ ") :: date)" -%}
     {{ dbt_dataloft.make_timestamp_tz(
         "year(" ~ d ~ ")", "month(" ~ d ~ ")", "day(" ~ d ~ ")",
         0, 0, 0, local_timezone) }}
+{% endmacro %}
+
+{% macro bigquery__date_to_local_timestamp(source_date, local_timezone) %}
+    {#-- timestamp(date_expression, time_zone) is midnight of that date in that zone,
+         which is exactly this macro's contract -- no parts, no zero hour/minute/second. --#}
+    timestamp(safe_cast({{ source_date }} as date), {{ local_timezone }})
 {% endmacro %}

@@ -1,12 +1,12 @@
 ---
 name: dbt-dataloft-macros
-description: Use when writing dbt models that clean phone numbers, US states, ZIPs, countries or gender values, or when adding a macro to the dbt_dataloft package. Covers the adapter-dispatch pattern this package uses to run on both DuckDB and Snowflake.
+description: Use when writing dbt models that clean phone numbers, US states, ZIPs, countries or gender values, or when adding a macro to the dbt_dataloft package. Covers the adapter-dispatch pattern this package uses to run on DuckDB, Snowflake and BigQuery.
 ---
 
 # dbt_dataloft macros
 
-Cross-adapter dbt macros carried between Dataloft clients. Runs on **DuckDB** and
-**Snowflake**. There is no BigQuery implementation — see Adding an adapter.
+Cross-adapter dbt macros carried between Dataloft clients. Runs on **DuckDB**,
+**Snowflake** and **BigQuery**, verified on all three.
 
 ## Available macros
 
@@ -23,13 +23,15 @@ Namespace every call: `{{ dbt_dataloft.<macro>(...) }}`.
 
 ## The dispatch pattern
 
-Two functions diverge between DuckDB and Snowflake. Both are wrapped in
-`macros/dialect/regex.sql` — **use the shims, never the raw functions**:
+Several functions diverge across DuckDB, Snowflake and BigQuery. All are wrapped in
+`macros/dialect/` — **use the shims, never the raw functions**:
 
 | Instead of | Use |
 |---|---|
-| `regexp_like(x, p)` / `regexp_matches(x, p)` | `{{ dbt_dataloft.regex_matches(x, 'p') }}` |
+| `regexp_like(x, p)` / `regexp_matches(x, p)` / `regexp_contains(x, p)` | `{{ dbt_dataloft.regex_matches(x, 'p') }}` |
+| `regexp_instr(...) > 0` / `regexp_contains(...)` (substring) | `{{ dbt_dataloft.regex_contains(x, 'p') }}` |
 | `regexp_replace(...)` | `{{ dbt_dataloft.regex_replace_all(x, 'p', 'r') }}` |
+| `cast(x as varchar)` / `x::varchar` | `{{ dbt_dataloft.as_string(x) }}` (BigQuery has no VARCHAR or `::`) |
 
 Why each one matters, verified 2026-08-27 on DuckDB 1.5.x:
 
@@ -37,12 +39,25 @@ Why each one matters, verified 2026-08-27 on DuckDB 1.5.x:
 - Snowflake's 4-arg `regexp_replace(x, p, r, 1, 0)` does not bind on DuckDB. Also loud.
 - **Silent** failure, the dangerous one: DuckDB's 3-arg `regexp_replace` replaces only
   the *first* match, while Snowflake's is already global. `regex_replace_all` adds
-  DuckDB's `'g'` flag so both behave the same.
+  DuckDB's `'g'` flag so both behave the same. BigQuery's `regexp_replace` is global by
+  default like Snowflake's, so the shim adds no flag there.
+- BigQuery has no VARCHAR type and no `::` cast operator — `cast(x as varchar)` is a
+  parse error there, not a silent divergence, but it's still routed through
+  `as_string` so callers don't hardcode a type name that doesn't exist on all three.
+
+Two macros that used to be adapter-agnostic plain SQL are now dispatched too, because
+the BigQuery equivalent genuinely differs in output, not just syntax:
+
+- `hybrid_id` — BigQuery's `md5()` returns `BYTES`, not a hex string like DuckDB and
+  Snowflake's. `bigquery__hybrid_id` wraps it in `to_hex(...)` to match.
+- `standardize_gender` — routes its cast through `as_string` instead of a hardcoded
+  `::varchar`.
 
 ## Traps found by testing with bad data
 
-Five, all verified on both adapters 2026-08-27. Three are fixed in the macros; two are
-inherent and can only be avoided by not misusing the macro.
+Six. The first five were verified on DuckDB and Snowflake 2026-08-27; the sixth on
+DuckDB and BigQuery 2026-09-25. Three are fixed in the macros; three are inherent and can
+only be avoided by not misusing the macro.
 
 **Fixed — `regex_matches` is full-match only.** Snowflake's `regexp_like` is implicitly
 anchored to the whole string; DuckDB's `regexp_matches` is a substring search. So
@@ -66,6 +81,15 @@ in the digits. Only apply it to a column you know is NANP.
 `'90210'` casts to 1970-01-02 on Snowflake (epoch seconds) and null on DuckDB. Both are
 defensible, so it is not normalised. Guard the input, or convert epochs explicitly.
 
+**Inherent — `make_timestamp_tz` rounds a fractional second on BigQuery and keeps it on
+DuckDB.** BigQuery's `DATETIME()` takes an INT64 seconds argument, and its `CAST` to
+INT64 rounds half away from zero rather than truncating — measured 2026-09-25: `30.5`→`31`,
+`30.4`→`30`, `31.5`→`32`. So `second = 30.5` yields `:30.5` on DuckDB and `:31` on
+BigQuery. Not normalised, because it is unreachable through the two wrappers —
+`add_local_timezone` gets whole seconds from DuckDB's `second()`, which returns BIGINT,
+and `date_to_local_timestamp` passes a literal `0`. **Pass whole seconds if you call
+`make_timestamp_tz` directly.**
+
 ## Why `format_name` exists
 
 `dbt-coding-standards` mandates proper-cased names, and the obvious `initcap(trim(x))` does not
@@ -83,31 +107,63 @@ Write POSIX classes, not backslash escapes. `'[[:space:]]+'` works on both;
 unchanged. This is why `format_state` and `format_country` differ from their
 originals, which render `'\\s+'`.
 
-## Verified on both adapters
+## Verified on all three adapters
 
 DuckDB 1.5.x and Snowflake 10.30.101, 2026-08-27 — 33 and 37 cases respectively, all
 producing identical output. The Snowflake run used a least-privilege dev role and warehouse via
 `dbt show --inline`, materialising nothing.
 
-POSIX character classes (`[[:space:]]`, `[.]`) behave the same on both, which is what
-makes the escaping rule above safe rather than merely convenient.
+POSIX character classes (`[[:space:]]`, `[.]`) behave the same on all three, which is
+what makes the escaping rule above safe rather than merely convenient. RE2 is BigQuery's
+regex engine and supports them; confirmed by running them, 2026-09-25.
 
 One observed difference, expected: timezone-aware timestamps agree on the instant, but
 Snowflake keeps the source offset in the rendered text (`12:00 -05:00`) where DuckDB
 renders in the session zone. Both compare and join correctly. A test that string-matches
-an offset will pass on one and fail on the other while both are right.
+an offset will pass on one and fail on the other while both are right. BigQuery's
+TIMESTAMP behaves like DuckDB's here (no retained offset), confirmed 2026-09-25.
 
 ## Adding an adapter
 
-Add a `<adapter>__<name>` macro beside the existing `default__` and `snowflake__`
-implementations in `macros/dialect/regex.sql`. `default__` currently targets DuckDB
+Add a `<adapter>__<name>` macro beside the existing `default__`, `snowflake__` and
+`bigquery__` implementations in `macros/dialect/`. `default__` currently targets DuckDB
 and ANSI-ish SQL.
 
-BigQuery is deliberately unimplemented: under ADR 0001 BigQuery is a landing and
-serving layer with no dbt models. If a second, BigQuery-targeted project appears it
-will need `bigquery__` variants (`REGEXP_CONTAINS`, `REGEXP_REPLACE`), plus
-`cast(... as string)` in `standardize_gender` since BigQuery has no `::` operator, and
-a replacement for `translate`, which BigQuery lacks entirely.
+### BigQuery: verified 2026-09-25, and what the run caught
+
+BigQuery variants exist for every dispatched macro (`macros/dialect/regex.sql`,
+`macros/dialect/timestamps.sql`, `macros/dialect/casts.sql`, `hybrid_id`, `format_name`,
+`add_local_timezone`, `date_to_local_timestamp`). Verified by a differential run against
+a live project: the same sample rows through the same models on DuckDB and BigQuery, 65
+rows across 4 models, byte-identical. `translate` was not changed and needed no change.
+
+**Two defects that reading Google's documentation did not catch.** Both are worth
+knowing because both would recur in any macro written the same way:
+
+1. **BigQuery rejects the doubled-quote escape.** `'it''s'` is the SQL standard and works
+   on DuckDB and Snowflake; BigQuery ends the string at the first quote and reports
+   *"concatenated string literals must be separated by whitespace"*. `validate_email`'s
+   pattern contained one. Fixed with `escaped_quote()` in `macros/dialect/regex.sql`
+   rather than by rewriting the pattern, so DuckDB and Snowflake output stays identical.
+2. **A dispatched macro is no use if its caller is not dispatched.** `make_timestamp_tz`
+   had a working `bigquery__` variant, but `add_local_timezone` and
+   `date_to_local_timestamp` built its arguments with `year(...)`, `month(...)` and a
+   `::` cast — none of which exist on BigQuery. Both wrappers are now dispatched, and the
+   BigQuery branches skip part-decomposition entirely (`timestamp(datetime_expr, tz)`
+   takes a naive DATETIME directly). **When adding an adapter, check the callers, not
+   just the dispatched macro.**
+
+**`bigquery__make_timestamp_tz` needed covering separately.** Both its callers bypass it
+on BigQuery, so no model reaches it; calling it directly with literal parts does. Whole
+seconds agree with DuckDB including DST both ways. A fractional second does not — see the
+sixth trap below.
+
+**How the comparison was done**, if it needs repeating for another adapter: build the
+same models on both engines, changing only the `FROM` clause, and diff normalised
+exports. Normalise in the *client*, not in SQL — timestamps to epoch microseconds
+(compare instants, never rendered text, per the divergence documented above), decimals to
+a fixed scale, NULL to a visible sentinel, and replace `now_utc()` with a bounded
+freshness assertion rather than dropping it, so a UTC-vs-local bug still surfaces.
 
 ## Known carried-over defect
 
@@ -120,7 +176,8 @@ make this package disagree with the original.
 
 ## Before adding a macro
 
-Ported macros must behave identically on both adapters. Prove it — build a model with
-a `values` list of inputs and expected outputs and run it on DuckDB, rather than
-reasoning about dialect support from documentation. Two of the four findings above
-contradicted what a reasonable reading of the docs would suggest.
+Ported macros must behave identically on every adapter. Prove it — build a model with
+a `values` list of inputs and expected outputs and run it, rather than reasoning about
+dialect support from documentation. Two of the four DuckDB/Snowflake findings above
+contradicted what a reasonable reading of the docs would suggest, and so did both of the
+BigQuery ones.

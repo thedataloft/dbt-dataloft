@@ -2,8 +2,8 @@
     Normalise a North American phone number to E.164 (+1XXXXXXXXXX), or null.
 
     Ported from the originating client project's `generate_formated_phone`. Behaviour is unchanged; the only
-    edit is routing `regexp_like` through the dialect shim so it runs on DuckDB as
-    well as Snowflake.
+    edit is routing `regexp_like` through the dialect shim so it runs on DuckDB and
+    BigQuery as well as Snowflake. BigQuery verified 2026-09-25.
 
     **NORTH AMERICA ONLY, AND IT CANNOT DETECT OTHERWISE.** This is the sharpest edge in
     the package. A ten-digit number starting 2-9 is assumed to be NANP and gets `+1`

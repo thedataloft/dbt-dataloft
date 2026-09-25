@@ -1,7 +1,7 @@
 # dbt_dataloft
 
-Cross-adapter dbt macros carried between Dataloft clients. Runs on **DuckDB** and
-**Snowflake**.
+Cross-adapter dbt macros carried between Dataloft clients. Runs on **DuckDB**,
+**Snowflake** and **BigQuery**.
 
 ```yaml
 # packages.yml
@@ -46,15 +46,24 @@ it. Porting a macro without reading it is how the silent failure gets reintroduc
 
 ## Status
 
-Verified on **both adapters**, 2026-08-27.
+Verified on **all three adapters**.
 
 | | |
 |---|---|
-| **DuckDB** 1.5.x (dbt-core 1.12.2 / dbt-duckdb 1.11.0) | 33 macro cases + both generic tests, green |
-| **Snowflake** 10.30.101 (dbt-core 1.10.15 / dbt-snowflake 1.10.3) | 37 cases, green — run as a least-privilege dev role, materialising nothing |
+| **DuckDB** 1.5.x (dbt-core 1.12.2 / dbt-duckdb 1.11.0) | 33 macro cases + both generic tests, green — 2026-08-27 |
+| **Snowflake** 10.30.101 (dbt-core 1.10.15 / dbt-snowflake 1.10.3) | 37 cases, green — 2026-08-27, least-privilege dev role, materialising nothing |
+| **BigQuery** (dbt-core 1.12.2 / dbt-bigquery 1.12.1) | 65 rows across 4 models, byte-identical to DuckDB — 2026-09-25 |
 
-Every case produced identical output on both, including the three deliberate dead
-branches. `md5` agrees byte-for-byte across Snowflake, DuckDB and Python.
+Every DuckDB/Snowflake case produced identical output on both, including the three
+deliberate dead branches. `md5` agrees byte-for-byte across Snowflake, DuckDB and
+Python; BigQuery's `md5` returns `BYTES` rather than a hex string, so `hybrid_id`
+wraps it in `to_hex(...)` there — see `macros/keys/hybrid_id.sql`.
+
+The BigQuery run was a differential test: the same sample rows through the same models
+on DuckDB and BigQuery, with timestamps compared as instants (epoch microseconds) rather
+than rendered text, since adapters legitimately disagree on the latter. It found two
+defects that reading Google's documentation had not, plus one accepted divergence — see
+SKILL.md.
 
 One difference is real and expected, not a defect: timezone-aware timestamps agree on
 the **instant** on both adapters, but Snowflake retains the source offset in the rendered

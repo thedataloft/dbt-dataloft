@@ -4,7 +4,9 @@
     Ported from the originating client project's `generate_formated_country`. Lookup logic preserved verbatim.
     Single edit: whitespace stripping goes through the dialect shim using POSIX
     `[[:space:]]+`, because the original's rendered '\\s+' silently fails to match on
-    DuckDB.
+    DuckDB. BigQuery has the same
+    `translate(expr, source_chars, target_chars)` signature and was verified against a
+    live instance 2026-09-25.
 
     Usage:
         {{ dbt_dataloft.format_country('country') }}

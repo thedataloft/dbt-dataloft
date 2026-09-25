@@ -5,8 +5,9 @@
         of letters, digits and apostrophes; every other character (space, hyphen, period,
         underscore) is a delimiter and is kept. So VAN DER BERG -> Van Der Berg, mary-jane ->
         Mary-Jane, émilie -> Émilie -- and o'brien -> O'brien, because Snowflake does not treat the
-        apostrophe as a delimiter and identical output on both adapters is the contract here.
-        Verified side by side, 9 cases, 2026-09-10.
+        apostrophe as a delimiter and identical output on every adapter is the contract here.
+        Verified side by side on DuckDB and Snowflake, 9 cases, 2026-09-10; on BigQuery
+        against DuckDB, 2026-09-25.
 
         Why a macro: dbt-coding-standards mandates proper-cased names, and the obvious
         initcap(trim(x)) does not exist on DuckDB (Catalog Error, verified 2026-09-10 on 1.5.5).
@@ -39,4 +40,23 @@
 
 {% macro snowflake__format_name(name_field) %}
     initcap(trim({{ name_field }}))
+{% endmacro %}
+
+{% macro bigquery__format_name(name_field) %}
+    {#-- BigQuery's initcap(value[, delimiters]) accepts an explicit delimiter set. Its
+         *default* delimiter set is documented only by one example (space and hyphen are
+         delimiters); whether apostrophe is included by default is not confirmed by
+         Google's docs, and this is precisely the divergence that makes O'Brien vs
+         O'brien silent elsewhere in this file. So this does not rely on the default --
+         it passes an explicit delimiter list (whitespace plus common ASCII punctuation)
+         that omits the apostrophe, matching the Snowflake-default contract the DuckDB
+         branch above also targets. Everything not listed as a delimiter, including
+         accented Unicode letters, stays a word character.
+
+         Added 2026-09-21. VERIFIED against a live BigQuery instance 2026-09-25 -- the
+         gamble paid off: o'brien -> O'brien (not O'Brien), mary-jane -> Mary-Jane,
+         emilie with an acute -> capitalised correctly, VAN DER BERG -> Van Der Berg,
+         all byte-identical to DuckDB. Do not "simplify" this to a bare initcap(): the
+         default delimiter set is what this explicitly avoids relying on. #}
+    initcap(trim({{ name_field }}), ' \t\n\r!"#$%&()*+,-./:;<=>?@[]^_`{|}~')
 {% endmacro %}
