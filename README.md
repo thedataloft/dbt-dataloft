@@ -24,6 +24,8 @@ from {{ source('crm', 'contacts') }}
 | `format_phone(expr)` | E.164 `+1XXXXXXXXXX`, else null |
 | `format_zip(expr)` | Five-digit US ZIP, else null |
 | `format_state(expr[, zip_expr])` | Two-letter state code, with optional ZIP fallback |
+| `format_postal(expr[, country_expr])` | US five-digit ZIP or Canadian `A1A 1A1`, else null; country detected from the value's shape if not given |
+| `format_state_province(expr[, postal_expr[, country_expr]])` | Two-letter US state or Canadian province code, with optional postal-code fallback |
 | `format_country(expr)` | ISO 3166-1 alpha-2 code, else null |
 | `standardize_gender(expr)` | `'Male'`, `'Female'`, `'Other'`, else null |
 | `format_name(expr)` | Proper-cased, trimmed name; Snowflake `initcap` default semantics on every adapter |

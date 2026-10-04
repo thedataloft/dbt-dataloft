@@ -13,8 +13,8 @@
     anything containing a letter — see the guard in the body.
 
     **US only.** Feed it a Canadian or UK postcode and you get null, which is correct
-    but means this macro cannot normalise non-US postal codes. There is no macro for
-    those yet.
+    but means this macro cannot normalise non-US postal codes. For Canadian postal codes
+    as well, use `format_postal`.
 
     Args:
         zip_code_field: column or expression

@@ -1,6 +1,6 @@
 ---
 name: dbt-dataloft-macros
-description: Use when writing dbt models that clean phone numbers, US states, ZIPs, countries or gender values, or when adding a macro to the dbt_dataloft package. Covers the adapter-dispatch pattern this package uses to run on DuckDB, Snowflake and BigQuery.
+description: Use when writing dbt models that clean phone numbers, US states, Canadian provinces, ZIPs and postal codes, countries or gender values, or when adding a macro to the dbt_dataloft package. Covers the adapter-dispatch pattern this package uses to run on DuckDB, Snowflake and BigQuery.
 ---
 
 # dbt_dataloft macros
@@ -17,6 +17,8 @@ Namespace every call: `{{ dbt_dataloft.<macro>(...) }}`.
 | `format_phone(expr)` | E.164 `+1XXXXXXXXXX` for valid North American numbers, else null |
 | `format_zip(expr)` | Five-digit US ZIP, else null. Handles ZIP+4 and restores lost leading zeros |
 | `format_state(expr[, zip_expr])` | Two-letter state code. Falls back to ZIP ranges when `zip_expr` is given |
+| `format_postal(expr[, country_expr])` | US five-digit ZIP (as `format_zip`) or Canadian `A1A 1A1`, else null. Without `country_expr` the country is read from the value's shape |
+| `format_state_province(expr[, postal_expr[, country_expr]])` | Two-letter US state or Canadian province/territory code. Postal fallback uses ZIP prefixes or the postal code's first letter. Its ZIP ranges are corrected — see below |
 | `format_country(expr)` | ISO 3166-1 alpha-2 code, else null |
 | `standardize_gender(expr)` | `'Male'`, `'Female'`, `'Other'`, else null |
 | `format_name(expr)` | Proper-cased name, trimmed — Snowflake `initcap` default semantics on every adapter (`o'brien` → `O'brien`, `mary-jane` → `Mary-Jane`) |
@@ -173,6 +175,15 @@ return `GU` not `MP`, and `008xx` return `PR` not `VI`. American Samoa, the Nort
 Mariana Islands and the US Virgin Islands cannot be produced from a ZIP. Details in the
 macro's own header. Fixing means reordering the branches most-specific-first, and would
 make this package disagree with the original.
+
+**`format_state_province` does not carry it.** Its ZIP fallback is checked
+most-specific-first and returns the correct code for the three cases above — plus five more
+prefixes `format_state` also gets wrong: `202`–`205` (DC, not VA), `755`–`759` (TX, not AR),
+`005` (NY, not null), `055` (MA, not VT) and `340` (Armed Forces Americas: null, not FL).
+Note that a naive reorder is *not* enough: `967` is mostly Hawaii, and only `96799` is
+American Samoa; only `96950`–`96952` are the Northern Mariana Islands. The full list is in the
+macro header. Use `format_state_province` when correctness matters more than matching the
+original.
 
 ## Before adding a macro
 
