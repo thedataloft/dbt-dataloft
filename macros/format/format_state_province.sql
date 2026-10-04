@@ -72,160 +72,86 @@
 
     {#-- `postal` is either five digits or 'A1A 1A1', so the digit ranges below can never
          match a Canadian code and the letter checks can never match a US one. --#}
+    {#-- US ZIP prefix ranges, FIRST MATCH WINS -- exceptions sit before the ranges that
+         contain them. Expanded below into one `when '<prefix>'` per three-digit prefix,
+         so the cleaned postal expression is written once rather than once per range:
+         it is ~40 lines of SQL itself, and a `when ... between` per range pasted it
+         ~95 times (6,500 compiled lines per call). A null code claims the prefix for
+         nothing, so later ranges cannot. --#}
+    {%- set us_prefix_ranges = [
+        ('005', '005', 'NY'),  ('008', '008', 'VI'),  ('055', '055', 'MA'),  ('340', '340', none),
+        ('350', '369', 'AL'),  ('995', '999', 'AK'),  ('850', '865', 'AZ'),  ('716', '729', 'AR'),
+        ('900', '961', 'CA'),  ('800', '816', 'CO'),  ('060', '069', 'CT'),  ('197', '199', 'DE'),
+        ('320', '349', 'FL'),  ('300', '319', 'GA'),  ('398', '399', 'GA'),  ('967', '968', 'HI'),
+        ('832', '838', 'ID'),  ('600', '629', 'IL'),  ('460', '479', 'IN'),  ('500', '528', 'IA'),
+        ('660', '679', 'KS'),  ('400', '427', 'KY'),  ('700', '714', 'LA'),  ('039', '049', 'ME'),
+        ('206', '219', 'MD'),  ('010', '027', 'MA'),  ('480', '499', 'MI'),  ('550', '567', 'MN'),
+        ('386', '397', 'MS'),  ('630', '658', 'MO'),  ('590', '599', 'MT'),  ('680', '693', 'NE'),
+        ('889', '898', 'NV'),  ('030', '038', 'NH'),  ('070', '089', 'NJ'),  ('870', '884', 'NM'),
+        ('100', '149', 'NY'),  ('270', '289', 'NC'),  ('580', '588', 'ND'),  ('430', '459', 'OH'),
+        ('730', '741', 'OK'),  ('743', '749', 'OK'),  ('970', '979', 'OR'),  ('150', '196', 'PA'),
+        ('028', '029', 'RI'),  ('290', '299', 'SC'),  ('570', '577', 'SD'),  ('370', '385', 'TN'),
+        ('750', '799', 'TX'),  ('885', '888', 'TX'),  ('840', '847', 'UT'),  ('050', '059', 'VT'),
+        ('201', '201', 'VA'),  ('220', '246', 'VA'),  ('980', '994', 'WA'),  ('247', '269', 'WV'),
+        ('530', '549', 'WI'),  ('820', '831', 'WY'),  ('200', '200', 'DC'),  ('202', '205', 'DC'),
+        ('569', '569', 'DC'),  ('006', '009', 'PR'),  ('969', '969', 'GU'),
+    ] -%}
+    {%- set us_prefix_codes = {} -%}
+    {%- for lo, hi, code in us_prefix_ranges -%}
+        {%- for n in range(lo | int, (hi | int) + 1) -%}
+            {%- set prefix = '%03d' % n -%}
+            {%- if prefix not in us_prefix_codes -%}
+                {%- do us_prefix_codes.update({prefix: code}) -%}
+            {%- endif -%}
+        {%- endfor -%}
+    {%- endfor -%}
+
+    {#-- `postal` is either five digits or 'A1A 1A1', so a digit prefix can never match a
+         Canadian code and a letter can never match a US one. --#}
     {%- set us_from_postal -%}
-    case
-        -- Five-digit exceptions inside larger ranges -- must precede them
-        -- American Samoa (96799, inside Hawaii's 967)
-        when {{ postal }} = '96799' then 'AS'
-        -- Northern Mariana Islands (96950-96952, inside Guam's 969)
-        when {{ postal }} between '96950' and '96952' then 'MP'
-
-        -- Three-digit exceptions inside larger ranges -- must precede them
-        -- Holtsville, NY IRS (005)
-        when left({{ postal }}, 3) = '005' then 'NY'
-        -- US Virgin Islands (008, inside Puerto Rico's 006-009)
-        when left({{ postal }}, 3) = '008' then 'VI'
-        -- Andover, MA IRS (055, inside Vermont's 050-059)
-        when left({{ postal }}, 3) = '055' then 'MA'
-        -- Armed Forces Americas (340, inside Florida's 320-349) -- not a state
-        when left({{ postal }}, 3) = '340' then null
-
-        -- Alabama (350-369)
-        when left({{ postal }}, 3) between '350' and '369' then 'AL'
-        -- Alaska (995-999)
-        when left({{ postal }}, 3) between '995' and '999' then 'AK'
-        -- Arizona (850-865)
-        when left({{ postal }}, 3) between '850' and '865' then 'AZ'
-        -- Arkansas (716-729)
-        when left({{ postal }}, 3) between '716' and '729' then 'AR'
-        -- California (900-961)
-        when left({{ postal }}, 3) between '900' and '961' then 'CA'
-        -- Colorado (800-816)
-        when left({{ postal }}, 3) between '800' and '816' then 'CO'
-        -- Connecticut (060-069)
-        when left({{ postal }}, 3) between '060' and '069' then 'CT'
-        -- Delaware (197-199)
-        when left({{ postal }}, 3) between '197' and '199' then 'DE'
-        -- Florida (320-349)
-        when left({{ postal }}, 3) between '320' and '349' then 'FL'
-        -- Georgia (300-319, 398-399)
-        when left({{ postal }}, 3) between '300' and '319' then 'GA'
-        when left({{ postal }}, 3) between '398' and '399' then 'GA'
-        -- Hawaii (967-968)
-        when left({{ postal }}, 3) between '967' and '968' then 'HI'
-        -- Idaho (832-838)
-        when left({{ postal }}, 3) between '832' and '838' then 'ID'
-        -- Illinois (600-629)
-        when left({{ postal }}, 3) between '600' and '629' then 'IL'
-        -- Indiana (460-479)
-        when left({{ postal }}, 3) between '460' and '479' then 'IN'
-        -- Iowa (500-528)
-        when left({{ postal }}, 3) between '500' and '528' then 'IA'
-        -- Kansas (660-679)
-        when left({{ postal }}, 3) between '660' and '679' then 'KS'
-        -- Kentucky (400-427)
-        when left({{ postal }}, 3) between '400' and '427' then 'KY'
-        -- Louisiana (700-714)
-        when left({{ postal }}, 3) between '700' and '714' then 'LA'
-        -- Maine (039-049)
-        when left({{ postal }}, 3) between '039' and '049' then 'ME'
-        -- Maryland (206-219)
-        when left({{ postal }}, 3) between '206' and '219' then 'MD'
-        -- Massachusetts (010-027)
-        when left({{ postal }}, 3) between '010' and '027' then 'MA'
-        -- Michigan (480-499)
-        when left({{ postal }}, 3) between '480' and '499' then 'MI'
-        -- Minnesota (550-567)
-        when left({{ postal }}, 3) between '550' and '567' then 'MN'
-        -- Mississippi (386-397)
-        when left({{ postal }}, 3) between '386' and '397' then 'MS'
-        -- Missouri (630-658)
-        when left({{ postal }}, 3) between '630' and '658' then 'MO'
-        -- Montana (590-599)
-        when left({{ postal }}, 3) between '590' and '599' then 'MT'
-        -- Nebraska (680-693)
-        when left({{ postal }}, 3) between '680' and '693' then 'NE'
-        -- Nevada (889-898)
-        when left({{ postal }}, 3) between '889' and '898' then 'NV'
-        -- New Hampshire (030-038)
-        when left({{ postal }}, 3) between '030' and '038' then 'NH'
-        -- New Jersey (070-089)
-        when left({{ postal }}, 3) between '070' and '089' then 'NJ'
-        -- New Mexico (870-884)
-        when left({{ postal }}, 3) between '870' and '884' then 'NM'
-        -- New York (100-149)
-        when left({{ postal }}, 3) between '100' and '149' then 'NY'
-        -- North Carolina (270-289)
-        when left({{ postal }}, 3) between '270' and '289' then 'NC'
-        -- North Dakota (580-588)
-        when left({{ postal }}, 3) between '580' and '588' then 'ND'
-        -- Ohio (430-459)
-        when left({{ postal }}, 3) between '430' and '459' then 'OH'
-        -- Oklahoma (730-741, 743-749)
-        when left({{ postal }}, 3) between '730' and '741' then 'OK'
-        when left({{ postal }}, 3) between '743' and '749' then 'OK'
-        -- Oregon (970-979)
-        when left({{ postal }}, 3) between '970' and '979' then 'OR'
-        -- Pennsylvania (150-196)
-        when left({{ postal }}, 3) between '150' and '196' then 'PA'
-        -- Rhode Island (028-029)
-        when left({{ postal }}, 3) between '028' and '029' then 'RI'
-        -- South Carolina (290-299)
-        when left({{ postal }}, 3) between '290' and '299' then 'SC'
-        -- South Dakota (570-577)
-        when left({{ postal }}, 3) between '570' and '577' then 'SD'
-        -- Tennessee (370-385)
-        when left({{ postal }}, 3) between '370' and '385' then 'TN'
-        -- Texas (750-799, 885-888) -- 755-759 is East Texas (Texarkana TX, Tyler, Longview)
-        when left({{ postal }}, 3) between '750' and '799' then 'TX'
-        when left({{ postal }}, 3) between '885' and '888' then 'TX'
-        -- Utah (840-847)
-        when left({{ postal }}, 3) between '840' and '847' then 'UT'
-        -- Vermont (050-059, less 055 above)
-        when left({{ postal }}, 3) between '050' and '059' then 'VT'
-        -- Virginia (201, 220-246) -- 202-205 is DC, below
-        when left({{ postal }}, 3) = '201' then 'VA'
-        when left({{ postal }}, 3) between '220' and '246' then 'VA'
-        -- Washington (980-994)
-        when left({{ postal }}, 3) between '980' and '994' then 'WA'
-        -- West Virginia (247-269)
-        when left({{ postal }}, 3) between '247' and '269' then 'WV'
-        -- Wisconsin (530-549)
-        when left({{ postal }}, 3) between '530' and '549' then 'WI'
-        -- Wyoming (820-831)
-        when left({{ postal }}, 3) between '820' and '831' then 'WY'
-
-        -- District of Columbia (200, 202-205, 569)
-        when left({{ postal }}, 3) = '200' then 'DC'
-        when left({{ postal }}, 3) between '202' and '205' then 'DC'
-        when left({{ postal }}, 3) = '569' then 'DC'
-
-        -- Territories (the exceptions above already took AS, MP and VI)
-        -- Puerto Rico (006-009, less 008)
-        when left({{ postal }}, 3) between '006' and '009' then 'PR'
-        -- Guam (969, less 96950-96952)
-        when left({{ postal }}, 3) = '969' then 'GU'
-
-        else null
+    case {{ postal }}
+        -- Five-digit exceptions inside larger prefixes
+        when '96799' then 'AS'
+        when '96950' then 'MP'
+        when '96951' then 'MP'
+        when '96952' then 'MP'
+        else case left({{ postal }}, 3)
+            {%- for prefix in us_prefix_codes | sort %}
+            {%- if us_prefix_codes[prefix] is not none %}
+            when '{{ prefix }}' then '{{ us_prefix_codes[prefix] }}'
+            {%- endif %}
+            {%- endfor %}
+            else null
+        end
     end
     {%- endset -%}
 
     {%- set ca_from_postal -%}
-    case
+    case left({{ postal }}, 1)
+        when 'A' then 'NL'
+        when 'B' then 'NS'
+        when 'C' then 'PE'
+        when 'E' then 'NB'
+        when 'G' then 'QC'
+        when 'H' then 'QC'
+        when 'J' then 'QC'
+        when 'K' then 'ON'
+        when 'L' then 'ON'
+        when 'M' then 'ON'
+        when 'N' then 'ON'
+        when 'P' then 'ON'
+        when 'R' then 'MB'
+        when 'S' then 'SK'
+        when 'T' then 'AB'
+        when 'V' then 'BC'
+        when 'Y' then 'YT'
         -- X is split between two territories by the first three characters
-        when left({{ postal }}, 3) in ('X0A', 'X0B', 'X0C') then 'NU'
-        when left({{ postal }}, 1) = 'X' then 'NT'
-        when left({{ postal }}, 1) = 'A' then 'NL'
-        when left({{ postal }}, 1) = 'B' then 'NS'
-        when left({{ postal }}, 1) = 'C' then 'PE'
-        when left({{ postal }}, 1) = 'E' then 'NB'
-        when left({{ postal }}, 1) in ('G', 'H', 'J') then 'QC'
-        when left({{ postal }}, 1) in ('K', 'L', 'M', 'N', 'P') then 'ON'
-        when left({{ postal }}, 1) = 'R' then 'MB'
-        when left({{ postal }}, 1) = 'S' then 'SK'
-        when left({{ postal }}, 1) = 'T' then 'AB'
-        when left({{ postal }}, 1) = 'V' then 'BC'
-        when left({{ postal }}, 1) = 'Y' then 'YT'
+        when 'X' then case left({{ postal }}, 3)
+            when 'X0A' then 'NU'
+            when 'X0B' then 'NU'
+            when 'X0C' then 'NU'
+            else 'NT'
+        end
         else null
     end
     {%- endset -%}
