@@ -1,0 +1,12 @@
+# Test harness for dbt_dataloft: installs the package from ../ and checks macro output
+# against expected values. Run from this directory, e.g.
+#   dbt deps && dbt build --select test_format_phone+
+# BigQuery or Snowflake: add a target to profiles.yml and pass --target.
+name: "dbt_dataloft_integration_tests"
+version: "0.1.0"
+config-version: 2
+profile: "dbt_dataloft_integration_tests"
+
+models:
+  dbt_dataloft_integration_tests:
+    +materialized: view

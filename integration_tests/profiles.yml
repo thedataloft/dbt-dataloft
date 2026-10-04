@@ -1,0 +1,8 @@
+# DuckDB only, no credentials. The database file is gitignored (*.duckdb).
+dbt_dataloft_integration_tests:
+  target: duckdb
+  outputs:
+    duckdb:
+      type: duckdb
+      path: integration_tests.duckdb
+      threads: 1

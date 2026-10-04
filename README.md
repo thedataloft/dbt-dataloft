@@ -21,7 +21,7 @@ from {{ source('crm', 'contacts') }}
 
 | Macro | Returns |
 |---|---|
-| `format_phone(expr)` | E.164 `+1XXXXXXXXXX`, else null |
+| `format_phone(expr[, allow_international=True])` | E.164 `+1XXXXXXXXXX`, else null. Opt-in: also a number typed with a leading `+` country code — pass the value as typed |
 | `format_zip(expr)` | Five-digit US ZIP, else null |
 | `format_state(expr[, zip_expr])` | Two-letter state code, with optional ZIP fallback |
 | `format_postal(expr[, country_expr])` | US five-digit ZIP or Canadian `A1A 1A1`, else null; country detected from the value's shape if not given |
@@ -45,6 +45,16 @@ Read [SKILL.md](./SKILL.md) first. It covers the `adapter.dispatch` pattern, the
 specific Snowflake/DuckDB divergences these macros work around — including one that
 fails **silently** rather than raising — and the regex escaping rule that follows from
 it. Porting a macro without reading it is how the silent failure gets reintroduced.
+
+Expected-output cases live in [`integration_tests/`](./integration_tests/), a dbt project that
+installs this package from `../`. Each model lists inputs beside expected outputs and a test
+fails on any mismatch. From that directory, on DuckDB with no credentials:
+
+```bash
+dbt deps --profiles-dir . && dbt build --select test_format_phone+ --profiles-dir .
+```
+
+Currently covers `format_phone` only.
 
 ## Status
 

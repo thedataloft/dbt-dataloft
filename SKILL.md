@@ -14,7 +14,7 @@ Namespace every call: `{{ dbt_dataloft.<macro>(...) }}`.
 
 | Macro | Returns |
 |---|---|
-| `format_phone(expr)` | E.164 `+1XXXXXXXXXX` for valid North American numbers, else null |
+| `format_phone(expr[, allow_international=True])` | E.164 `+1XXXXXXXXXX` for valid North American numbers, else null. With `allow_international=True`, pass the value **as typed**: a leading `+` with 8–15 digits is kept as E.164 (`+1` must still be valid NANP); without a `+` the North American rules apply |
 | `format_zip(expr)` | Five-digit US ZIP, else null. Handles ZIP+4 and restores lost leading zeros |
 | `format_state(expr[, zip_expr])` | Two-letter state code. Falls back to ZIP ranges when `zip_expr` is given |
 | `format_postal(expr[, country_expr])` | US five-digit ZIP (as `format_zip`) or Canadian `A1A 1A1`, else null. Without `country_expr` the country is read from the value's shape |
@@ -76,8 +76,15 @@ now use `try_cast`, so unparseable input yields null like every other macro here
 strings are common in real extracts; CSV-to-parquet produces `''` far more often than NULL.
 
 **Inherent — `format_phone` cannot detect non-North-American numbers.** A London
-`2071234567` becomes `+12071234567`, a valid-looking Maine number. The information is not
-in the digits. Only apply it to a column you know is NANP.
+`2079460123` becomes `+12079460123`, a valid-looking Maine number. The information is not
+in the digits. Only apply the default mode to a column you know is NANP.
+
+For mixed data, `allow_international=True` uses the one signal that *is* reliable — a typed
+leading `+`. Pass the raw value: stripping non-digits upstream, as default-mode callers do,
+destroys the `+`. It still cannot rescue the London example — no `+`, so North American
+rules apply — and leaves `00`/`011` prefixes, short numbers and country-guessing as null by
+design. Keep the raw value in its own column. Default-mode SQL is byte-identical to before
+the option existed (diffed 2026-10-04).
 
 **Inherent — an all-digit string is a valid timestamp to Snowflake, not to DuckDB.**
 `'90210'` casts to 1970-01-02 on Snowflake (epoch seconds) and null on DuckDB. Both are
@@ -191,4 +198,5 @@ Ported macros must behave identically on every adapter. Prove it — build a mod
 a `values` list of inputs and expected outputs and run it, rather than reasoning about
 dialect support from documentation. Two of the four DuckDB/Snowflake findings above
 contradicted what a reasonable reading of the docs would suggest, and so did both of the
-BigQuery ones.
+BigQuery ones. Put the cases in `integration_tests/` (see `test_format_phone.sql` for the
+pattern) so they are re-runnable on every adapter, not lost after one session.
