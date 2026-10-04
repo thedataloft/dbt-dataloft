@@ -47,14 +47,23 @@ fails **silently** rather than raising — and the regex escaping rule that foll
 it. Porting a macro without reading it is how the silent failure gets reintroduced.
 
 Expected-output cases live in [`integration_tests/`](./integration_tests/), a dbt project that
-installs this package from `../`. Each model lists inputs beside expected outputs and a test
-fails on any mismatch. From that directory, on DuckDB with no credentials:
+installs this package from `../`. Each model lists inputs beside expected outputs; a
+`matches_expected` test fails on any case where they differ. Passing on two adapters means
+they agree with each other as well as with the expected answers. Models are ephemeral, so a
+run creates nothing in the warehouse.
 
 ```bash
-dbt deps --profiles-dir . && dbt build --select test_format_phone+ --profiles-dir .
+cd integration_tests
+./run.sh                                       # DuckDB, no credentials
+DBT_BQ_PROJECT=<project> ./run.sh bigquery     # after: gcloud auth application-default login
+./run.sh snowflake                             # after: pip install dbt-snowflake; set DBT_SF_*
+DBT=/path/to/venv/bin/dbt ./run.sh duckdb      # use a specific dbt install
 ```
 
-Currently covers `format_phone` only.
+Covers `format_phone`, `format_postal`, `format_state_province`, and — as regression pins —
+`format_zip` and `format_state` (known-wrong ZIP answers included, so they cannot change
+silently). Adding a macro? Add a `test_<macro>.sql` beside them and its columns to
+`models/schema.yml`. Every phone number in the cases is from a fictional range; keep it so.
 
 ## Status
 
@@ -65,6 +74,7 @@ Verified on **all three adapters**.
 | **DuckDB** 1.5.x (dbt-core 1.12.2 / dbt-duckdb 1.11.0) | 33 macro cases + both generic tests, green — 2026-08-27 |
 | **Snowflake** 10.30.101 (dbt-core 1.10.15 / dbt-snowflake 1.10.3) | 37 cases, green — 2026-08-27, least-privilege dev role, materialising nothing |
 | **BigQuery** (dbt-core 1.12.2 / dbt-bigquery 1.12.1) | 65 rows across 4 models, byte-identical to DuckDB — 2026-09-25 |
+| **DuckDB** 1.5.6 + **BigQuery**, `integration_tests/` | 157 cases, 10 tests (phone, postal, state/province, zip, state), green on both — 2026-10-04. Snowflake target present, not yet run |
 
 Every DuckDB/Snowflake case produced identical output on both, including the three
 deliberate dead branches. `md5` agrees byte-for-byte across Snowflake, DuckDB and

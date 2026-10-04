@@ -35,24 +35,12 @@
     ('011 44 20 7946 0123',   None,             None),
 ] -%}
 
-{%- set null_string = 'cast(null as ' ~ dbt.type_string() ~ ')' -%}
-
 with cases as (
-    {%- for input, expected_default, expected_international in cases %}
-    select
-        {{ loop.index }} as case_id,
-        {{ null_string if input is none else "'" ~ input ~ "'" }} as input,
-        {{ null_string if expected_default is none else "'" ~ expected_default ~ "'" }} as expected_default,
-        {{ null_string if expected_international is none else "'" ~ expected_international ~ "'" }} as expected_international
-    {% if not loop.last %}union all{% endif %}
-    {%- endfor %}
+    {{ case_rows(['input', 'expected_default', 'expected_international'], cases) }}
 )
 
 select
-    case_id,
-    input,
-    expected_default,
+    *,
     {{ dbt_dataloft.format_phone('input') }} as actual_default,
-    expected_international,
     {{ dbt_dataloft.format_phone('input', allow_international=True) }} as actual_international
 from cases
