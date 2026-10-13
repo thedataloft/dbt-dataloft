@@ -1,0 +1,64 @@
+# Each actual_* column must equal its expected_* column, case by case.
+version: 2
+
+models:
+  - name: test_format_phone
+    columns:
+      - name: actual_default
+        data_tests:
+          - matches_expected:
+              arguments:
+                expected: expected_default
+      - name: actual_international
+        data_tests:
+          - matches_expected:
+              arguments:
+                expected: expected_international
+  - name: test_format_postal
+    columns:
+      - name: actual_no_country
+        data_tests:
+          - matches_expected:
+              arguments:
+                expected: expected_no_country
+      - name: actual_with_country
+        data_tests:
+          - matches_expected:
+              arguments:
+                expected: expected_with_country
+  - name: test_format_state_province
+    columns:
+      - name: actual_state_only
+        data_tests:
+          - matches_expected:
+              arguments:
+                expected: expected_state_only
+      - name: actual_with_postal
+        data_tests:
+          - matches_expected:
+              arguments:
+                expected: expected_with_postal
+      - name: actual_with_country
+        data_tests:
+          - matches_expected:
+              arguments:
+                expected: expected_with_country
+  - name: test_format_zip
+    columns:
+      - name: actual
+        data_tests:
+          - matches_expected:
+              arguments:
+                expected: expected
+  - name: test_format_state
+    columns:
+      - name: actual_state_only
+        data_tests:
+          - matches_expected:
+              arguments:
+                expected: expected_state_only
+      - name: actual_with_zip
+        data_tests:
+          - matches_expected:
+              arguments:
+                expected: expected_with_zip

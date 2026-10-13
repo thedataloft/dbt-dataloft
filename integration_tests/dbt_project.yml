@@ -1,0 +1,13 @@
+# Test harness for dbt_dataloft: installs the package from ../ and checks every macro's
+# output against expected values, on whichever adapter --target selects. See ./run.sh.
+name: "dbt_dataloft_integration_tests"
+version: "0.1.0"
+config-version: 2
+profile: "dbt_dataloft_integration_tests"
+
+models:
+  dbt_dataloft_integration_tests:
+    # Ephemeral: each case model is inlined into its tests, so a run creates nothing in
+    # the warehouse -- fine for a least-privilege Snowflake role, free on BigQuery.
+    +materialized: ephemeral
+    +tags: ["macro_cases"]

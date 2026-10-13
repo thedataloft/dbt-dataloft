@@ -1,5 +1,5 @@
 {#
-    Dialect shims for the two regex divergences between Snowflake and DuckDB.
+    Dialect shims for the regex divergences between Snowflake, DuckDB and BigQuery.
 
     Verified 2026-08-13 against DuckDB 1.5.x:
       - regexp_like       exists on Snowflake, NOT on DuckDB (regexp_matches)
@@ -8,10 +8,7 @@
                           replaces only the FIRST match unless given the 'g' flag.
                           Snowflake's 3-arg form is already global.
 
-    BigQuery implementations are deliberately absent. Under ADR 0001 BigQuery is a
-    landing and serving layer with no dbt models, so there is no bigquery adapter to
-    dispatch to yet. Add bigquery__ variants (REGEXP_CONTAINS / REGEXP_REPLACE) if and
-    when a second, BigQuery-targeted project appears.
+    BigQuery variants added 2026-09-21, verified against a live instance 2026-09-25.
 
     `pattern` is a Jinja string and is emitted single-quoted. Escaping is dialect
     sensitive — keep patterns simple, and test any pattern containing a backslash on
@@ -38,6 +35,12 @@ regexp_matches({{ expr }}, '{{ pattern }}')
 regexp_like({{ expr }}, '{{ pattern }}')
 {% endmacro %}
 
+{#-- BigQuery has no separate full-match function; regexp_contains against an anchored
+     (^…$) pattern is a full match. Every caller in this package anchors already. --#}
+{% macro bigquery__regex_matches(expr, pattern) %}
+regexp_contains({{ expr }}, '{{ pattern }}')
+{% endmacro %}
+
 
 {#-- SUBSTRING MATCH. True if the pattern appears anywhere in the string.
 
@@ -56,6 +59,12 @@ regexp_matches({{ expr }}, '{{ pattern }}')
 regexp_instr({{ expr }}, '{{ pattern }}') > 0
 {% endmacro %}
 
+{#-- BigQuery's regexp_contains is unanchored substring search natively -- no wrapping
+     needed, unlike the snowflake__ shim above. --#}
+{% macro bigquery__regex_contains(expr, pattern) %}
+regexp_contains({{ expr }}, '{{ pattern }}')
+{% endmacro %}
+
 
 {% macro regex_replace_all(expr, pattern, replacement='') %}
   {{ return(adapter.dispatch('regex_replace_all', 'dbt_dataloft')(expr, pattern, replacement)) }}
@@ -68,3 +77,29 @@ regexp_replace({{ expr }}, '{{ pattern }}', '{{ replacement }}', 'g')
 {% macro snowflake__regex_replace_all(expr, pattern, replacement) %}
 regexp_replace({{ expr }}, '{{ pattern }}', '{{ replacement }}')
 {% endmacro %}
+
+{#-- BigQuery's regexp_replace replaces every match by default, like Snowflake's --
+     no 'g' flag exists or is needed. --#}
+{% macro bigquery__regex_replace_all(expr, pattern, replacement) %}
+regexp_replace({{ expr }}, '{{ pattern }}', '{{ replacement }}')
+{% endmacro %}
+
+
+{#-- A literal apostrophe INSIDE a single-quoted SQL string literal.
+
+     DuckDB and Snowflake take the SQL-standard doubled quote (''). BigQuery does not
+     recognise it: it ends the string at the first quote and then reports the remainder
+     as an adjacent literal --
+       "Syntax error: concatenated string literals must be separated by whitespace"
+     -- so the whole model fails to parse. Loud, not silent, but it fails the build.
+
+     Dispatching the escape rather than rewriting the pattern keeps the DuckDB and
+     Snowflake output byte-identical, so their 2026-08-27 verification still stands. --#}
+     
+{% macro escaped_quote() %}
+  {{ return(adapter.dispatch('escaped_quote', 'dbt_dataloft')()) }}
+{% endmacro %}
+
+{% macro default__escaped_quote() %}{{ return("''") }}{% endmacro %}
+
+{% macro bigquery__escaped_quote() %}{{ return("\\'") }}{% endmacro %}

@@ -5,7 +5,9 @@
     INCLUDING the known dead branches below. Two edits only: whitespace stripping now
     goes through the dialect shim using POSIX `[[:space:]]+`, because the original's
     rendered '\\s+' silently fails to match on DuckDB (no error -- whitespace simply
-    survives); `translate` is unchanged, having been verified to work on both.
+    survives); `translate` is unchanged, having been verified to work on all three
+    adapters -- DuckDB and Snowflake 2026-08-27, BigQuery 2026-09-25, where the same
+    signature and character-deletion-on-shorter-target semantics hold.
 
     KNOWN DEAD BRANCHES (carried over deliberately, 2026-08-13). In the ZIP fallback,
     earlier `between` ranges swallow three later cases, so these can never be returned:

@@ -1,0 +1,6 @@
+# The versions the harness was verified with. Install the adapters you need into one
+# environment -- they share dbt-core -- and point run.sh at it with DBT=<path to dbt>.
+dbt-core==1.12.2
+dbt-duckdb==1.11.0
+dbt-bigquery==1.12.1
+# dbt-snowflake==1.10.3   # verified on dbt-core 1.10.15; re-pin when first run on 1.12

@@ -2,7 +2,8 @@
     Normalise a US ZIP to five digits, or null.
 
     Ported from the originating client project's `generate_formated_zip`. Behaviour is unchanged; the edits are
-    routing `regexp_replace` and `regexp_like` through the dialect shims. Note the
+    routing `regexp_replace` and `regexp_like` through the dialect shims, and the
+    varchar cast through `as_string` for BigQuery, which has no VARCHAR type. Note the
     original used Snowflake's 4-arg `regexp_replace(x, p, r, 1, 0)`, whose position=1
     occurrence=0 means "replace every match" — `regex_replace_all` preserves that
     meaning on both adapters.
@@ -12,8 +13,8 @@
     anything containing a letter — see the guard in the body.
 
     **US only.** Feed it a Canadian or UK postcode and you get null, which is correct
-    but means this macro cannot normalise non-US postal codes. There is no macro for
-    those yet.
+    but means this macro cannot normalise non-US postal codes. For Canadian postal codes
+    as well, use `format_postal`.
 
     Args:
         zip_code_field: column or expression
@@ -22,7 +23,7 @@
         {{ dbt_dataloft.format_zip('postal_code') }}
 #}
 {% macro format_zip(zip_code_field) %}
-    {%- set cleaned_zip = dbt_dataloft.regex_replace_all('trim(cast(' ~ zip_code_field ~ ' as varchar))', '[^0-9]', '') -%}
+    {%- set cleaned_zip = dbt_dataloft.regex_replace_all('trim(' ~ dbt_dataloft.as_string(zip_code_field) ~ ')', '[^0-9]', '') -%}
     {%- set formatted_zip = "left(lpad(" ~ cleaned_zip ~ ", 5, '0'), 5)" -%}
 
     case
@@ -30,7 +31,7 @@
         -- one usually does. Without this guard 'M5V 3A8' strips to '538', pads to '00538'
         -- and passes the range check below — a plausible-looking US ZIP invented from
         -- Canadian data. Silent corruption, so it is checked first. Verified 2026-08-27.
-        when {{ dbt_dataloft.regex_contains('cast(' ~ zip_code_field ~ ' as varchar)', '[A-Za-z]') }}
+        when {{ dbt_dataloft.regex_contains(dbt_dataloft.as_string(zip_code_field), '[A-Za-z]') }}
             then null
 
         -- Null or empty once non-digits are stripped

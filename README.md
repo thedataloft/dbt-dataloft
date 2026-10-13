@@ -1,7 +1,7 @@
 # dbt_dataloft
 
-Cross-adapter dbt macros carried between Dataloft clients. Runs on **DuckDB** and
-**Snowflake**.
+Cross-adapter dbt macros carried between Dataloft clients. Runs on **DuckDB**,
+**Snowflake** and **BigQuery**.
 
 ```yaml
 # packages.yml
@@ -21,9 +21,11 @@ from {{ source('crm', 'contacts') }}
 
 | Macro | Returns |
 |---|---|
-| `format_phone(expr)` | E.164 `+1XXXXXXXXXX`, else null |
+| `format_phone(expr[, allow_international=True])` | E.164 `+1XXXXXXXXXX`, else null. Opt-in: also a number typed with a leading `+` country code — pass the value as typed |
 | `format_zip(expr)` | Five-digit US ZIP, else null |
 | `format_state(expr[, zip_expr])` | Two-letter state code, with optional ZIP fallback |
+| `format_postal(expr[, country_expr])` | US five-digit ZIP or Canadian `A1A 1A1`, else null; country detected from the value's shape if not given |
+| `format_state_province(expr[, postal_expr[, country_expr]])` | Two-letter US state or Canadian province code, with optional postal-code fallback |
 | `format_country(expr)` | ISO 3166-1 alpha-2 code, else null |
 | `standardize_gender(expr)` | `'Male'`, `'Female'`, `'Other'`, else null |
 | `format_name(expr)` | Proper-cased, trimmed name; Snowflake `initcap` default semantics on every adapter |
@@ -44,17 +46,46 @@ specific Snowflake/DuckDB divergences these macros work around — including one
 fails **silently** rather than raising — and the regex escaping rule that follows from
 it. Porting a macro without reading it is how the silent failure gets reintroduced.
 
+Expected-output cases live in [`integration_tests/`](./integration_tests/), a dbt project that
+installs this package from `../`. Each model lists inputs beside expected outputs; a
+`matches_expected` test fails on any case where they differ. Passing on two adapters means
+they agree with each other as well as with the expected answers. Models are ephemeral, so a
+run creates nothing in the warehouse.
+
+```bash
+cd integration_tests
+./run.sh                                       # DuckDB, no credentials
+DBT_BQ_PROJECT=<project> ./run.sh bigquery     # after: gcloud auth application-default login
+./run.sh snowflake                             # after: pip install dbt-snowflake; set DBT_SF_*
+DBT=/path/to/venv/bin/dbt ./run.sh duckdb      # use a specific dbt install
+```
+
+Covers `format_phone`, `format_postal`, `format_state_province`, and — as regression pins —
+`format_zip` and `format_state` (known-wrong ZIP answers included, so they cannot change
+silently). Adding a macro? Add a `test_<macro>.sql` beside them and its columns to
+`models/schema.yml`. Every phone number in the cases is from a fictional range; keep it so.
+
 ## Status
 
-Verified on **both adapters**, 2026-08-27.
+Verified on **all three adapters**.
 
 | | |
 |---|---|
-| **DuckDB** 1.5.x (dbt-core 1.12.2 / dbt-duckdb 1.11.0) | 33 macro cases + both generic tests, green |
-| **Snowflake** 10.30.101 (dbt-core 1.10.15 / dbt-snowflake 1.10.3) | 37 cases, green — run as a least-privilege dev role, materialising nothing |
+| **DuckDB** 1.5.x (dbt-core 1.12.2 / dbt-duckdb 1.11.0) | 33 macro cases + both generic tests, green — 2026-08-27 |
+| **Snowflake** 10.30.101 (dbt-core 1.10.15 / dbt-snowflake 1.10.3) | 37 cases, green — 2026-08-27, least-privilege dev role, materialising nothing |
+| **BigQuery** (dbt-core 1.12.2 / dbt-bigquery 1.12.1) | 65 rows across 4 models, byte-identical to DuckDB — 2026-09-25 |
+| **DuckDB** 1.5.6 + **BigQuery**, `integration_tests/` | 157 cases, 10 tests (phone, postal, state/province, zip, state), green on both — 2026-10-04. Snowflake target present, not yet run |
 
-Every case produced identical output on both, including the three deliberate dead
-branches. `md5` agrees byte-for-byte across Snowflake, DuckDB and Python.
+Every DuckDB/Snowflake case produced identical output on both, including the three
+deliberate dead branches. `md5` agrees byte-for-byte across Snowflake, DuckDB and
+Python; BigQuery's `md5` returns `BYTES` rather than a hex string, so `hybrid_id`
+wraps it in `to_hex(...)` there — see `macros/keys/hybrid_id.sql`.
+
+The BigQuery run was a differential test: the same sample rows through the same models
+on DuckDB and BigQuery, with timestamps compared as instants (epoch microseconds) rather
+than rendered text, since adapters legitimately disagree on the latter. It found two
+defects that reading Google's documentation had not, plus one accepted divergence — see
+SKILL.md.
 
 One difference is real and expected, not a defect: timezone-aware timestamps agree on
 the **instant** on both adapters, but Snowflake retains the source offset in the rendered
